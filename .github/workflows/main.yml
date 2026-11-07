@@ -76,7 +76,7 @@ jobs:
           MASTER_CONTROL_URL = "https://meja.do.am/work/lives.txt"
 
           # رابط النشر الواحد المطلوب
-          APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwCAQleRMsdOzhNiPolZTT_njmGPfI_riwXabFzlYm9ENA4rE_KbNC0ONxLK5bbOpmc/exec"
+          APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9UHTHqH5kVUqw-cccZvlMoyQRKmUHpF4QwX6N52QehswPvP8nyoxAXUdfSHBGcmNF/exec"
 
           # مدة عشوائية بين 5 ساعات (18000 ثانية) إلى 6 ساعات (21600 ثانية)
           TOTAL_SESSION_TIME = random.randint(5 * 3600, 6 * 3600)
@@ -245,13 +245,13 @@ jobs:
                   fan_env['PULSE_SINK'] = sink_name
                   fan_process = subprocess.Popen(fan_cmd, env=fan_env)
 
-                  # التسجيل المباشر للشاشة مع تعديلات الـ Buffer والـ 60 فريم المحسنة وتظليل أسفل الشاشة
+                  # التسجيل المباشر للشاشة مع قص الجزء العلوي (شريط الروابط والعناوين) وتعديل الفلاتر
                   ffmpeg_cmd = [
                       'ffmpeg', '-y',
                       '-nostats', '-loglevel', 'error',
                       '-thread_queue_size', '1024', # بفر أقوى للمدخلات
                       '-f', 'x11grab',
-                      '-draw_mouse', '0',           # إخفاء الماوس لتقليل الرندر
+                      '-draw_mouse', '0',            # إخفاء الماوس لتقليل الرندر
                       '-framerate', '60',
                       '-video_size', '720x1280',
                       '-i', f":{disp1.display}",
@@ -261,8 +261,8 @@ jobs:
                       '-map', '0:v',
                       '-map', '1:a',
                       
-                      # فلتر دمج لتثبيت الـ 60 فريم ورسم مستطيل أسود أسفل الشاشة يغطي 10٪ (128 بكسل)
-                      '-vf', 'fps=60,drawbox=x=0:y=1152:w=720:h=128:color=black:t=fill',
+                      # فلتر لقص 80 بكسل من الأعلى لإخفاء شريط العنوان/الروابط، وتثبيت 60 فريم، وتظليل أسفل الشاشة
+                      '-vf', 'crop=720:1200:0:80,scale=720:1280,fps=60,drawbox=x=0:y=1152:w=720:h=128:color=black:t=fill',
                       
                       '-c:v', 'libx264',
                       '-preset', 'ultrafast',
