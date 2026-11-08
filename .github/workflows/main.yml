@@ -2,6 +2,8 @@ name: Perpetual Dual Stream
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
 
 concurrency:
   group: streaming-group
@@ -39,7 +41,6 @@ jobs:
       - name: System Setup
         run: |
           echo "1. Fixing Mirror Links..."
-          # بدلاً من حذف الملف، سنقوم بكتابة الرابط السريع بداخله ليعمل النظام بدون مشاكل
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
           fi
@@ -49,7 +50,7 @@ jobs:
           sudo apt-get update -y
           
           echo "3. Installing Packages..."
-          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends xvfb ffmpeg pulseaudio unclutter xdotool
+          DEBIAN_FRONTEND=noninteractive sudo apt-get install -y --no-install-recommends xvfb ffmpeg pulseaudio unclutter xdotool curl
           
           echo "4. Setting up Audio..."
           pulseaudio -D --exit-idle-time=-1 --disallow-exit || true
@@ -78,8 +79,14 @@ jobs:
           # رابط النشر الواحد المطلوب
           APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9UHTHqH5kVUqw-cccZvlMoyQRKmUHpF4QwX6N52QehswPvP8nyoxAXUdfSHBGcmNF/exec"
 
-          # مدة عشوائية بين 5 ساعات (18000 ثانية) إلى 6 ساعات (21600 ثانية)
-          TOTAL_SESSION_TIME = random.randint(5 * 3600, 6 * 3600)
+          # قراءة مفتاح يوتيوب API من متغيرات البيئة في جيت هب
+          YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY', '')
+
+          # مدة الجلسة الكلية لجيت هب: عشوائية بين 4 إلى 5 ساعات (بالثواني)
+          TOTAL_SESSION_TIME = random.randint(4 * 3600, 5 * 3600)
+
+          # مدة البث المباشر الواحد عشوائية بين 70 دقيقة (4200 ثانية) إلى 130 دقيقة (7800 ثانية)
+          SINGLE_STREAM_DURATION = random.randint(70 * 60, 130 * 60)
 
           # تحكم في صوت مروحة الكمبيوتر
           FAN_VOLUME = 0.08 
@@ -102,10 +109,50 @@ jobs:
                   print(f"Error reading control file: {e}")
               return None, None
 
+          def get_live_video_id():
+              """جلب ID البث المباشر من الخلية B1 في جوجل شيت"""
+              try:
+                  sheet_id = "1aKuvK01gwipeXtRWNsPwJvEfsZqllUbR8OvbGoDRuD0"
+                  url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Sheet1"
+                  res = requests.get(url, timeout=10)
+                  lines = res.text.split('\n')
+                  if len(lines) > 0:
+                      row = lines[0].replace('"', '').split(',')
+                      if len(row) >= 2:
+                          video_id = row[1].strip()
+                          if video_id:
+                              return video_id
+              except Exception as e:
+                  print(f"⚠️ Error reading Video ID from Sheet: {e}")
+              return None
+
+          def get_live_viewers(video_id):
+              """جلب عدد المشاهدين الحقيقيين بدقة عبر يوتيوب API الرسمي"""
+              if not video_id or not YOUTUBE_API_KEY:
+                  return 150
+              try:
+                  url = f"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id={video_id}&key={YOUTUBE_API_KEY}"
+                  res = requests.get(url, timeout=10)
+                  data = res.json()
+                  if "items" in data and len(data["items"]) > 0:
+                      details = data["items"][0].get("liveStreamingDetails", {})
+                      concurrent_viewers = details.get("concurrentViewers")
+                      if concurrent_viewers is not None:
+                          return int(concurrent_viewers)
+              except Exception as e:
+                  print(f"⚠️ API Viewer fetch error: {e}")
+              return 150
+
           def active_wait(driver, duration, stream_index):
               start_time = time.time()
               last_check_time = 0
+              last_viewer_check = 0
               last_url = driver.current_url
+              
+              # الانتظار قليلاً حتى يتم إنشاء البث في الشيت وجلب الـ ID
+              time.sleep(10)
+              video_id = get_live_video_id()
+              print(f"🎯 Target Live Video ID for monitoring: {video_id}")
               
               while time.time() - start_time < duration:
                   # النقر الأساسي
@@ -121,7 +168,10 @@ jobs:
                       pass
                   
                   current_time = time.time()
-                  if current_time - last_check_time > 10: # فحص حالة البث كل 10 ثواني
+                  elapsed_time = current_time - start_time
+                  
+                  # 1. فحص حالة البث من ملف التحكم كل 10 ثواني
+                  if current_time - last_check_time > 10: 
                       last_check_time = current_time
                       new_url, status = get_stream_config(stream_index)
                       
@@ -145,6 +195,19 @@ jobs:
                               print(f"🔄 URL updated dynamically to: {new_url}")
                           except Exception as e:
                               pass
+
+                  # 2. فحص عدد المشاهدين: يبدأ بعد مرور 10 دقائق (600 ثانية)، ثم يتكرر كل دقيقتين (120 ثانية)
+                  if elapsed_time >= 600:
+                      if current_time - last_viewer_check > 120:
+                          last_viewer_check = current_time
+                          viewers = get_live_viewers(video_id)
+                          print(f"👥 Current Live Viewers: {viewers}")
+                          
+                          if viewers < 100:
+                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 10m. Terminating stream session...")
+                              break
+                  else:
+                      print(f"⏳ In grace period (First 10 mins). Elapsed: {int(elapsed_time)}s / 600s")
                   
                   time.sleep(5) # يتم الانتظار 5 ثواني ثم يتكرر النقر الأساسي والإضافي
 
@@ -164,7 +227,7 @@ jobs:
               fan_process = None
               driver1 = None
               
-              print(f"🎯 Target Stream Duration: {duration} seconds ({duration/3600:.2f} hours).")
+              print(f"🎯 Target Stream Duration: {duration} seconds ({duration/60:.2f} minutes).")
 
               try:
                   # إعدادات Chrome لتقليل استهلاك المعالج لأقصى درجة وحظر الإشعارات تماماً
@@ -214,15 +277,15 @@ jobs:
                   if stream_title:
                       trigger_url += f"&title={urllib.parse.quote(stream_title)}"
                       
-                  print(f"🔗 Opening Publishing Link in Game Browser: {trigger_url}")
+                  print(f"🔗 Opening Publishing Link in Game Browser to create NEW stream: {trigger_url}")
                   try:
                       driver1.get(trigger_url)
                   except:
                       try: driver1.execute_script("window.stop();")
                       except: pass
                   
-                  print("⏳ Waiting 10 seconds for stream setup...")
-                  time.sleep(10)
+                  print("⏳ Waiting 15 seconds for stream and broadcast setup...")
+                  time.sleep(15)
                   
                   target_url, status = get_stream_config(stream_index)
                   if target_url:
@@ -319,7 +382,7 @@ jobs:
                       with open("hashtag.txt", "r") as f:
                           hashtag_num = int(f.read().strip())
                   except:
-                          hashtag_num = 32
+                      hashtag_num = 32
                       
                   stream_title = f"Snake game breaks world record #{hashtag_num}"
                   
@@ -344,8 +407,8 @@ jobs:
                   if init_status == "0":
                       print(f"⚠️ Selected stream (Index {random_index}) is set to 0 in control file. Exiting...")
                   else:
-                      print(f"🚀 Starting Stream Session for R1 using Link Index {random_index}...")
-                      start_stream(current_key, "Sink1", random_index, APPS_SCRIPT_URL, TOTAL_SESSION_TIME, stream_title=stream_title)
+                      print(f"🚀 Starting NEW Stream Session (Duration: {SINGLE_STREAM_DURATION/60:.1f} mins) within GitHub Session (Total: {TOTAL_SESSION_TIME/3600:.1f} hours)...")
+                      start_stream(current_key, "Sink1", random_index, APPS_SCRIPT_URL, SINGLE_STREAM_DURATION, stream_title=stream_title)
                       
                       # حفظ الهاشتاج فقط إذا تم تشغيل البث
                       with open("hashtag.txt", "w") as f:
@@ -358,6 +421,7 @@ jobs:
       - name: Run Streaming Script
         env:
           R1: ${{ secrets.R1 }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           ENABLE_STREAM: ${{ env.ENABLE_STREAM }}
         run: python main.py
 
@@ -369,4 +433,13 @@ jobs:
           git add hashtag.txt
           git commit -m "Update stream hashtag" || echo "No changes to commit"
           git push
-          
+
+      - name: 🔄 Trigger Next Session Immediately (24/7 Loop)
+        if: always()
+        run: |
+          echo "🔄 Launching next workflow session to keep 24/7 continuous streaming..."
+          curl -s -X POST \
+            -H "Authorization: token ${{ github.token }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/$(basename ${{ github.workflow_ref }})/dispatches \
+            -d '{"ref":"main"}' || true
