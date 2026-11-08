@@ -140,12 +140,11 @@ jobs:
               
               return 0 
 
-          def active_wait(driver, duration, stream_index, ffmpeg_proc):
+          def active_wait(driver, duration, stream_index):
               start_time = time.time()
               last_check_time = 0
               last_viewer_check = 0
               last_url = driver.current_url
-              stream_stopped = False
               
               time.sleep(15)
               video_id = get_live_video_id()
@@ -188,17 +187,15 @@ jobs:
                           viewers = get_live_viewers(video_id)
                           print(f"👥 Current Live Viewers: {viewers}")
                           
-                          if viewers < 100 and not stream_stopped:
-                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 2m. Stopping stream (GitHub session will continue until duration ends)...")
-                              try:
-                                  if ffmpeg_proc: ffmpeg_proc.kill()
-                              except:
-                                  pass
-                              stream_stopped = True
+                          if viewers < 100:
+                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 2m. Ending current stream (not the GitHub job)...")
+                              return False
                   else:
                       print(f"⏳ In grace period (First 2 mins). Elapsed: {int(elapsed_time)}s / 120s")
                   
                   time.sleep(5)
+              
+              return True
 
           def start_stream(youtube_key, sink_name, stream_index, apps_script_url, duration, stream_title=None):
               os.environ['PULSE_SINK'] = sink_name
@@ -314,7 +311,7 @@ jobs:
                   ]
 
                   ffmpeg_proc = subprocess.Popen(ffmpeg_cmd)
-                  active_wait(driver1, duration, stream_index, ffmpeg_proc)
+                  active_wait(driver1, duration, stream_index)
 
               except Exception as e:
                   print(f"Stream encountered an error: {e}")
@@ -352,7 +349,25 @@ jobs:
 
                   _, init_status = get_stream_config(random_index)
                   if init_status != "0":
-                      start_stream(current_key, "Sink1", random_index, APPS_SCRIPT_URL, SINGLE_STREAM_DURATION, stream_title=stream_title)
+                      session_start = time.time()
+                      while True:
+                          remaining = TOTAL_SESSION_TIME - (time.time() - session_start)
+                          if remaining <= 60:
+                              print(f"⏰ Session time ({TOTAL_SESSION_TIME // 60} min) nearly complete. Ending session.")
+                              break
+                          
+                          print(f"🎬 Starting stream. Remaining session time: {int(remaining)}s")
+                          start_stream(current_key, "Sink1", random_index, APPS_SCRIPT_URL, min(SINGLE_STREAM_DURATION, int(remaining)), stream_title=stream_title)
+                          
+                          remaining = TOTAL_SESSION_TIME - (time.time() - session_start)
+                          if remaining <= 60:
+                              print(f"⏰ Session time complete. Ending session.")
+                              break
+                          
+                          print(f"💤 Stream ended early. Waiting for remaining session time: {int(remaining)}s before retrying...")
+                          time.sleep(remaining)
+                          break
+                      
                       with open("hashtag.txt", "w") as f:
                           f.write(str(hashtag_num + 1))
           EOF
