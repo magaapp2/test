@@ -97,32 +97,31 @@ jobs:
               return None, None
 
           def get_live_video_id():
-              """قراءة آمنة لـ Video ID من Google Sheet وتجنب الأخطاء"""
+              """قراءة دقيقة ومباشرة لـ Video ID من الخلية B1 في جوجل شيت"""
               try:
                   sheet_id = "1aKuvK01gwipeXtRWNsPwJvEfsZqllUbR8OvbGoDRuD0"
                   url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Sheet1"
                   res = requests.get(url, timeout=10)
                   lines = res.text.split('\n')
-                  for line in lines:
-                      clean_line = line.replace('"', '')
-                      parts = clean_line.split(',')
-                      for part in parts:
-                          part_clean = part.strip()
-                          # معرّف يوتيوب عادة يكون بطول 11 حرفاً (أرقام وحروف وشرطات)
-                          if len(part_clean) == 11 and ('-' in part_clean or '_' in part_clean or part_clean.isalnum()):
-                              return part_clean
-                  # محاولة ثانية بالطريقة التقليدية لو الخلية B1 هي المحددة
                   if len(lines) > 0:
                       row = lines[0].replace('"', '').split(',')
-                      if len(row) >= 2 and len(row[1].strip()) > 5:
-                          return row[1].strip()
+                      if len(row) >= 2:
+                          vid = row[1].strip()
+                          if len(vid) > 0:
+                              print(f"✅ Extracted Video ID from Sheet: {vid}")
+                              return vid
               except Exception as e:
                   print(f"⚠️ Error reading Video ID from Sheet: {e}")
               return None
 
           def get_live_viewers(video_id):
-              if not video_id or not YOUTUBE_API_KEY:
-                  return 150 # لو فيه مشكلة مؤقتة نعطيه فرصة بدلاً من الإيقاف الفوري
+              if not video_id:
+                  print("⚠️ [Viewer Check] Video ID is empty/None!")
+                  return 0
+              if not YOUTUBE_API_KEY:
+                  print("⚠️ [Viewer Check] YOUTUBE_API_KEY is missing!")
+                  return 150
+              
               try:
                   url = f"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id={video_id}&key={YOUTUBE_API_KEY}"
                   res = requests.get(url, timeout=10)
@@ -133,10 +132,14 @@ jobs:
                       concurrent_viewers = details.get("concurrentViewers")
                       if concurrent_viewers is not None:
                           return int(concurrent_viewers)
+                      else:
+                          print("⚠️ [Viewer Check] Stream is not currently live or concurrentViewers not found.")
+                  else:
+                      print(f"⚠️ [Viewer Check] API returned no items for ID: {video_id}. Full response: {data}")
               except Exception as e:
-                  print(f"❌ [Viewer Debug] API Request Exception: {e}")
+                  print(f"❌ [Viewer Check] API Request Exception: {e}")
               
-              return 150 # قيمة افتراضية آمنة أثناء أخطاء الاتصال المؤقتة بالـ API
+              return 0 # إذا فشل الجلب، نعيد 0 لضمان إيقاف البث فوراً وتفادي الأخطاء
 
           def active_wait(driver, duration, stream_index):
               start_time = time.time()
@@ -179,6 +182,7 @@ jobs:
                           except:
                               pass
 
+                  # الفحص يبدأ بعد دقيقتين (120 ثانية) ويتكرر كل دقيقتين
                   if elapsed_time >= 120:
                       if current_time - last_viewer_check > 120:
                           last_viewer_check = current_time
@@ -186,10 +190,10 @@ jobs:
                           print(f"👥 Current Live Viewers: {viewers}")
                           
                           if viewers < 100:
-                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 10m. Terminating stream session...")
+                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 2m. Terminating stream session...")
                               break
                   else:
-                      print(f"⏳ In grace period (First 10 mins). Elapsed: {int(elapsed_time)}s / 600s")
+                      print(f"⏳ In grace period (First 2 mins). Elapsed: {int(elapsed_time)}s / 120s")
                   
                   time.sleep(5)
 
