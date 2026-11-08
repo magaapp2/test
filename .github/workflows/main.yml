@@ -77,6 +77,8 @@ jobs:
           TOTAL_SESSION_TIME = random.randint(4 * 3600, 5 * 3600)
           SINGLE_STREAM_DURATION = random.randint(70 * 60, 130 * 60)
           FAN_VOLUME = 0.08 
+          FIRST_VIEWER_CHECK_DELAY = 600  # 10 minutes
+          VIEWER_CHECK_INTERVAL = 120     # 2 minutes
 
           def kill_all(signum, frame):
               os._exit(0)
@@ -149,6 +151,7 @@ jobs:
               time.sleep(15)
               video_id = get_live_video_id()
               print(f"🎯 Target Live Video ID for monitoring: {video_id}")
+              print(f"⏳ First viewer check will run after {FIRST_VIEWER_CHECK_DELAY // 60} minutes, then every {VIEWER_CHECK_INTERVAL // 60} minutes.")
               
               while time.time() - start_time < duration:
                   try:
@@ -181,17 +184,18 @@ jobs:
                           except:
                               pass
 
-                  if elapsed_time >= 120:
-                      if current_time - last_viewer_check > 120:
+                  if elapsed_time >= FIRST_VIEWER_CHECK_DELAY:
+                      if current_time - last_viewer_check > VIEWER_CHECK_INTERVAL:
                           last_viewer_check = current_time
                           viewers = get_live_viewers(video_id)
                           print(f"👥 Current Live Viewers: {viewers}")
                           
                           if viewers < 100:
-                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 2m. Ending current stream (not the GitHub job)...")
+                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after {FIRST_VIEWER_CHECK_DELAY // 60} min. Ending current stream (not the GitHub job)...")
                               return False
                   else:
-                      print(f"⏳ In grace period (First 2 mins). Elapsed: {int(elapsed_time)}s / 120s")
+                      remaining_until_check = FIRST_VIEWER_CHECK_DELAY - elapsed_time
+                      print(f"⏳ Waiting for first viewer check. Elapsed: {int(elapsed_time)}s / {FIRST_VIEWER_CHECK_DELAY}s (remaining: {int(remaining_until_check)}s)")
                   
                   time.sleep(5)
               
