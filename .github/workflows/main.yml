@@ -270,7 +270,7 @@ jobs:
                       '-map', '1:a',
                       
                       # فلتر لقص 80 بكسل من الأعلى لإخفاء شريط العنوان/الروابط، وتثبيت 60 فريم، وتظليل أسفل الشاشة
-                      '-vf', 'crop=720:1200:0:80,scale=720:1280,fps=60,drawbox=x=0:y=1152:w=720:h=128:color=black:t=fill',
+                      '-vf', 'crop=720:1200:0:100,scale=720:1280,fps=60,drawbox=x=0:y=1152:w=720:h=128:color=black:t=fill',
                       
                       '-c:v', 'libx264',
                       '-preset', 'ultrafast',
