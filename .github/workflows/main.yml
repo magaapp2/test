@@ -217,6 +217,11 @@ jobs:
                   opts.add_argument('--disable-popup-blocking')
                   opts.add_argument('--disable-gpu')
                   opts.add_argument('--window-size=720,1280')
+                  opts.add_argument('--kiosk')
+                  opts.add_argument('--hide-scrollbars')
+                  opts.add_argument('--disable-software-rasterizer')
+                  opts.add_argument('--memory-pressure-off')
+                  opts.add_argument('--disable-background-timer-throttling')
 
                   prefs = {
                       "profile.default_content_setting_values.notifications": 2,
@@ -269,34 +274,36 @@ jobs:
                   fan_env['PULSE_SINK'] = sink_name
                   fan_process = subprocess.Popen(fan_cmd, env=fan_env)
 
-                  # تم تعديل إعدادات الـ ffmpeg لمنع تأخر الصوت وتصحيح قياسات الشاشة تماماً بدون أشرطة بيضاء
                   ffmpeg_cmd = [
                       'ffmpeg', '-y',
                       '-nostats', '-loglevel', 'error',
-                      '-thread_queue_size', '2048',
+                      '-thread_queue_size', '1024',
                       '-f', 'x11grab',
                       '-draw_mouse', '0',
                       '-framerate', '60',
                       '-video_size', '720x1280',
                       '-i', f":{disp1.display}",
-                      '-thread_queue_size', '2048',
+                      '-thread_queue_size', '1024',
                       '-f', 'pulse',
                       '-i', f"{sink_name}.monitor",
                       '-map', '0:v',
                       '-map', '1:a',
-                      '-fps_mode', 'cfr',
                       '-vf', 'fps=60,drawbox=x=0:y=1152:w=720:h=128:color=black:t=fill',
                       '-c:v', 'libx264',
                       '-preset', 'ultrafast',
                       '-tune', 'zerolatency',
+                      '-x264-params', 'threads=2:sliced-threads=1',
+                      '-max_muxing_queue_size', '1024',
                       '-b:v', '3000k',
                       '-maxrate', '3000k',
                       '-bufsize', '6000k',
+                      '-r', '60',
                       '-g', '120',
+                      '-keyint_min', '120',
+                      '-sc_threshold', '0',
                       '-pix_fmt', 'yuv420p',
                       '-c:a', 'aac',
                       '-b:a', '128k',
-                      '-ar', '44100',
                       '-f', 'flv',
                       f"rtmp://a.rtmp.youtube.com/live2/{youtube_key}"
                   ]
