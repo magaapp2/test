@@ -97,20 +97,16 @@ jobs:
               return None, None
 
           def get_live_video_id():
-              """قراءة معرف البث بدقة من رابط الـ CSV المخصص وتجاهل أي نصوص غريبة"""
               try:
                   csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQZPfj1cMNpyx4uRoUWfdsOrdN5M6_2le8mr2CWlMCbOue7QQinRHvg3mqMgGZJ6nlk13Hq9n4FBhwH/pub?gid=0&single=true&output=csv"
                   res = requests.get(csv_url, timeout=10)
                   
-                  # البحث عن كود فيديو يوتيوب صحيح (11 حرف/رقم) داخل استجابة الـ CSV
                   matches = re.findall(r'([a-zA-Z0-9_-]{11})', res.text)
                   for vid in matches:
-                      # استبعاد الـ IDs الوهمية التي قد تكون كلاسات أو نصوص برمجية
                       if vid not in ["primary-but", "button", "active"]:
                           print(f"✅ Extracted Valid Video ID from CSV: {vid}")
                           return vid
                           
-                  # لو لم يتم العثور بالطريقة السابقة، نبحث في السطور والصفوف العادية
                   lines = res.text.split('\n')
                   for line in lines:
                       row = line.replace('"', '').split(',')
@@ -125,10 +121,8 @@ jobs:
 
           def get_live_viewers(video_id):
               if not video_id:
-                  print("⚠️ [Viewer Check] Video ID is empty/None!")
                   return 0
               if not YOUTUBE_API_KEY:
-                  print("⚠️ [Viewer Check] YOUTUBE_API_KEY is missing!")
                   return 150
               
               try:
@@ -141,10 +135,6 @@ jobs:
                       concurrent_viewers = details.get("concurrentViewers")
                       if concurrent_viewers is not None:
                           return int(concurrent_viewers)
-                      else:
-                          print("⚠️ [Viewer Check] Stream is not currently live or concurrentViewers not found.")
-                  else:
-                      print(f"⚠️ [Viewer Check] API returned no items for ID: {video_id}.")
               except Exception as e:
                   print(f"❌ [Viewer Check] API Request Exception: {e}")
               
@@ -191,7 +181,6 @@ jobs:
                           except:
                               pass
 
-                  # الفحص يبدأ بعد دقيقتين (120 ثانية) ويتكرر كل دقيقتين
                   if elapsed_time >= 120:
                       if current_time - last_viewer_check > 120:
                           last_viewer_check = current_time
@@ -229,7 +218,6 @@ jobs:
                   opts.add_argument('--disable-gpu')
                   opts.add_argument('--window-size=720,1280')
 
-                  # إعدادات لتعطيل ومنع أي إشعارات أو رسائل منبثقة تماماً
                   prefs = {
                       "profile.default_content_setting_values.notifications": 2,
                       "profile.default_content_setting_values.geolocation": 2,
@@ -281,32 +269,34 @@ jobs:
                   fan_env['PULSE_SINK'] = sink_name
                   fan_process = subprocess.Popen(fan_cmd, env=fan_env)
 
+                  # تم تعديل إعدادات الـ ffmpeg لمنع تأخر الصوت وتصحيح قياسات الشاشة تماماً بدون أشرطة بيضاء
                   ffmpeg_cmd = [
                       'ffmpeg', '-y',
                       '-nostats', '-loglevel', 'error',
-                      '-thread_queue_size', '1024',
+                      '-thread_queue_size', '2048',
                       '-f', 'x11grab',
                       '-draw_mouse', '0',
                       '-framerate', '60',
                       '-video_size', '720x1280',
                       '-i', f":{disp1.display}",
-                      '-thread_queue_size', '1024',
+                      '-thread_queue_size', '2048',
                       '-f', 'pulse',
                       '-i', f"{sink_name}.monitor",
                       '-map', '0:v',
                       '-map', '1:a',
-                      '-vf', 'crop=720:1200:0:100,scale=720:1280,fps=60,drawbox=x=0:y=1152:w=720:h=128:color=black:t=fill',
+                      '-fps_mode', 'cfr',
+                      '-vf', 'fps=60,drawbox=x=0:y=1152:w=720:h=128:color=black:t=fill',
                       '-c:v', 'libx264',
                       '-preset', 'ultrafast',
                       '-tune', 'zerolatency',
                       '-b:v', '3000k',
                       '-maxrate', '3000k',
                       '-bufsize', '6000k',
-                      '-r', '60',
                       '-g', '120',
                       '-pix_fmt', 'yuv420p',
                       '-c:a', 'aac',
                       '-b:a', '128k',
+                      '-ar', '44100',
                       '-f', 'flv',
                       f"rtmp://a.rtmp.youtube.com/live2/{youtube_key}"
                   ]
