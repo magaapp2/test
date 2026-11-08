@@ -127,21 +127,35 @@ jobs:
               return None
 
           def get_live_viewers(video_id):
-              """جلب عدد المشاهدين الحقيقيين بدقة عبر يوتيوب API الرسمي"""
-              if not video_id or not YOUTUBE_API_KEY:
-                  return 150
+              """جلب عدد المشاهدين الحقيقيين بدقة عبر يوتيوب API الرسمي مع طباعة اللوج بالكامل"""
+              if not video_id:
+                  print("⚠️ [Viewer Debug] Video ID is missing!")
+                  return 0
+              if not YOUTUBE_API_KEY:
+                  print("⚠️ [Viewer Debug] YOUTUBE_API_KEY is missing from GitHub Secrets!")
+                  return 0
+              
               try:
                   url = f"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id={video_id}&key={YOUTUBE_API_KEY}"
                   res = requests.get(url, timeout=10)
                   data = res.json()
+                  
+                  # طباعة الرد كاملاً في اللوج لتتمكن من رؤيته بوضوح
+                  print(f"🔍 [API Response Debug]: {data}")
+
                   if "items" in data and len(data["items"]) > 0:
                       details = data["items"][0].get("liveStreamingDetails", {})
                       concurrent_viewers = details.get("concurrentViewers")
                       if concurrent_viewers is not None:
                           return int(concurrent_viewers)
+                      else:
+                          print("⚠️ [Viewer Debug] 'concurrentViewers' field not found in liveStreamingDetails (Stream might not be live yet or ended).")
+                  else:
+                      print("⚠️ [Viewer Debug] No items found in API response for this Video ID.")
               except Exception as e:
-                  print(f"⚠️ API Viewer fetch error: {e}")
-              return 150
+                  print(f"❌ [Viewer Debug] API Request Exception: {e}")
+              
+              return 0 # إرجاع 0 لضمان إيقاف البث فوراً لو فشل الجلب بدلاً من الافتراض الخاطئ
 
           def active_wait(driver, duration, stream_index):
               start_time = time.time()
