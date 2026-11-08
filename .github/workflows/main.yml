@@ -140,11 +140,12 @@ jobs:
               
               return 0 
 
-          def active_wait(driver, duration, stream_index):
+          def active_wait(driver, duration, stream_index, ffmpeg_proc):
               start_time = time.time()
               last_check_time = 0
               last_viewer_check = 0
               last_url = driver.current_url
+              stream_stopped = False
               
               time.sleep(15)
               video_id = get_live_video_id()
@@ -187,9 +188,13 @@ jobs:
                           viewers = get_live_viewers(video_id)
                           print(f"👥 Current Live Viewers: {viewers}")
                           
-                          if viewers < 100:
-                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 2m. Terminating stream session...")
-                              break
+                          if viewers < 100 and not stream_stopped:
+                              print(f"⚠️ Viewers ({viewers}) dropped below 100 threshold after 2m. Stopping stream (GitHub session will continue until duration ends)...")
+                              try:
+                                  if ffmpeg_proc: ffmpeg_proc.kill()
+                              except:
+                                  pass
+                              stream_stopped = True
                   else:
                       print(f"⏳ In grace period (First 2 mins). Elapsed: {int(elapsed_time)}s / 120s")
                   
@@ -309,7 +314,7 @@ jobs:
                   ]
 
                   ffmpeg_proc = subprocess.Popen(ffmpeg_cmd)
-                  active_wait(driver1, duration, stream_index)
+                  active_wait(driver1, duration, stream_index, ffmpeg_proc)
 
               except Exception as e:
                   print(f"Stream encountered an error: {e}")
